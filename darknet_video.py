@@ -34,23 +34,27 @@ def cvDrawBoxes(detections, img):
             float(x), float(y), float(w), float(h))
         pt1 = (xmin, ymin)
         pt2 = (xmax, ymax)
+        
         cv2.rectangle(img, pt1, pt2, (0, 255, 0), 1)
         cv2.putText(img,
                     detection[0].decode() +
                     " [" + str(round(detection[1] * 100, 2)) + "]",
                     (pt1[0], pt1[1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
                     [0, 255, 0], 2)
+                    
     return img
 
 
 netMain = None
 metaMain = None
 altNames = None
+# inizialize multi tracker
+multiTracker = cv2.MultiTracker_create()
 
 
 def YOLO():
 
-    global metaMain, netMain, altNames
+    global metaMain, netMain, altNames, multiTracker
     configPath = opt.cfg
     weightPath = opt.weight
     metaPath = opt.data
@@ -100,6 +104,9 @@ def YOLO():
     # Create an image we reuse for each detect
     darknet_image = darknet.make_image(darknet.network_width(netMain),
                                     darknet.network_height(netMain),3)
+
+    first_detection = 0
+    frame_number = 0
     while True:
         prev_time = time.time()
         ret, frame_read = cap.read()
@@ -112,13 +119,44 @@ def YOLO():
         darknet.copy_image_from_bytes(darknet_image,frame_resized.tobytes())
 
         detections = darknet.detect_image(netMain, metaMain, darknet_image, thresh=0.25)
+        
+        if first_detection is 1:
+            success, boxes = multiTracker.update(frame_resized)
 
-        image = cvDrawBoxes(detections, frame_resized)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            for i, newbox in enumerate(boxes):
+                p1 = (int(newbox[0]), int(newbox[1]))
+                p2 = (int(newbox[0] + newbox[2]), int(newbox[1] + newbox[3]))
+                cv2.rectangle(frame_resized, p1, p2, (0,0,255), 2, 1)
+
+        # if something is detected
+        if len(detections) is not 0 and first_detection is 0:
+            print(detections[0])
+            x, y, w, h = detections[0][2][0],\
+                detections[0][2][1],\
+                detections[0][2][2],\
+                detections[0][2][3]
+            print(f'tracker box is: {x} {y} {w} {h}')
+            multiTracker.add(cv2.TrackerCSRT_create(), frame_resized, (x-w/2,y-h/2,w,h))
+            #multiTracker.add(cv2.TrackerMIL_create(), image, (x,y,w+5,h+5))
+            first_detection = 1
+
+        
+
+            
+
+        
+        
+        #image = cvDrawBoxes(detections, frame_resized)
         print(1/(time.time()-prev_time))
-        image = cv2.resize(image,(1920, 1080))
-        cv2.imshow('Demo', image)
+        #image = cv2.resize(image,(1920, 1080))
+        frame_resized=cv2.cvtColor(frame_resized, cv2.COLOR_RGB2BGR)
+        cv2.imshow('Demo', frame_resized)
         cv2.waitKey(3)
+        if frame_number % 50 ==0:
+            multiTracker = cv2.MultiTracker_create()
+            first_detection = 0
+
+        frame_number+=1
     cap.release()
     out.release()
 
